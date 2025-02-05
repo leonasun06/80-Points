@@ -88,7 +88,9 @@
           :key="play.playerId"
           class="played-cards"
         >
-          <div v-for="card in play.cards" :key="cardKey(card)" 
+          <div 
+            v-for="(card, index) in play.cards" 
+            :key="cardKey(card, index)"
             class="card"
             :data-suit="card.suit"
             :data-rank="card.rank"
@@ -222,7 +224,7 @@ const currentTrick = computed(() => {
   return props.gameState?.currentTrick || [];
 });
 
-function cardKey(card) {
+function cardKey(card, index) {
   return `${card.suit}${card.rank}-${index}`;
 }
 

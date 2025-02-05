@@ -429,57 +429,56 @@ class Game {
 
   // 处理出牌
   playCards(playerId, cards) {
+    // 验证是否是当前玩家的回合
+    if (playerId !== this.currentPlayer) {
+      throw new Error('不是当前玩家的回合');
+    }
+
+    // 验证出牌是否合法
     if (!this.isValidPlay(cards, playerId)) {
-      const player = this.players.get(playerId);
-      const hasLevelCard = player.hand.some(card => card.rank === this.currentLevel.toString());
-      
-      let errorMessage = '非法的出牌';
-      if (hasLevelCard && this.currentTrick.length === 0) {
-        errorMessage = `必须出${this.currentLevel}`;
-      }
-      
-      throw new Error(errorMessage);
+      throw new Error('出牌不合法');
     }
-    try {
-      if (!this.canContinue()) {
-        throw new Error('游戏当前无法继续');
-      }
 
-      // 记录出牌
-      this.currentTrick.push({ playerId, cards });
-      
-      // 从玩家手中移除打出的牌
-      const player = this.players.get(playerId);
-      player.hand = player.hand.filter(card => 
-        !cards.some(playedCard => 
-          playedCard.suit === card.suit && playedCard.rank === card.rank
-        )
-      );
+    // 记录这手牌
+    this.currentTrick.push({
+      playerId,
+      cards
+    });
 
-      // 更新最后一手有效牌
-      this.lastValidPlay = cards;
+    // 从玩家手中移除打出的牌
+    const player = this.players.get(playerId);
+    player.hand = player.hand.filter(card => 
+      !cards.some(playedCard => 
+        playedCard.suit === card.suit && playedCard.rank === card.rank
+      )
+    );
 
-      // 移动到下一个玩家
-      this.currentPlayer = (this.currentPlayer + 1) % 4;
-
-      // 如果一轮结束，计算得分
-      if (this.currentTrick.length === 4) {
-        this.calculateTrickScore();
-      }
-
-      return {
-        success: true,
-        currentPlayer: this.currentPlayer,
-        currentTrick: this.currentTrick,
-        scores: this.scores
-      };
-    } catch (error) {
-      const errorInfo = this.handleError(error, { playerId, cards });
-      return {
-        success: false,
-        error: errorInfo
-      };
+    // 更新当前玩家
+    const playerIds = Array.from(this.players.keys());
+    const currentIndex = playerIds.indexOf(playerId);
+    if (currentIndex === -1) {
+      console.error('找不到当前玩家:', playerId);
+      throw new Error('找不到当前玩家');
     }
+
+    // 确保下一个玩家索引有效
+    const nextIndex = (currentIndex + 1) % playerIds.length;
+    this.currentPlayer = playerIds[nextIndex];
+
+    // 添加日志
+    console.log('更新当前玩家:', {
+      currentIndex,
+      nextIndex,
+      playerIds,
+      newCurrentPlayer: this.currentPlayer
+    });
+
+    return {
+      success: true,
+      currentPlayer: this.currentPlayer,
+      currentTrick: this.currentTrick,
+      scores: this.scores
+    };
   }
 
   // 判断是否是分牌
