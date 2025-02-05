@@ -1,0 +1,21 @@
+five-ten-k/
+  ├── node_modules/
+  ├── public/
+  ├── src/
+  │   ├── components/
+  │   │   ├── Card.jsx
+  │   │   ├── Hand.jsx
+  │   │   ├── Table.jsx
+  │   │   └── Game.jsx
+  │   ├── utils/
+  │   │   ├── deck.js
+  │   │   └── gameRules.js
+  │   ├── styles/
+  │   │   ├── Card.css
+  │   │   ├── Game.css
+  │   │   └── Table.css
+  │   ├── App.jsx
+  │   └── main.jsx
+  ├── index.html
+  ├── package.json
+  └── vite.config.js

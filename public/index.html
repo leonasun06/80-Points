@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>升级游戏测试</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .game-info {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .actions {
+            margin: 20px 0;
+        }
+        button {
+            margin: 5px;
+            padding: 10px;
+        }
+        #gameState {
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 10px;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid red;
+            display: none;
+        }
+        .success {
+            color: green;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid green;
+            display: none;
+        }
+        .hand {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .card {
+            display: inline-block;
+            padding: 5px 10px;
+            margin: 2px;
+            border: 1px solid #999;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .card.selected {
+            background-color: #e0e0e0;
+        }
+        .bid-options {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            display: none;
+        }
+        .suit-button {
+            font-size: 20px;
+            margin: 5px;
+            padding: 5px 15px;
+            cursor: pointer;
+        }
+        .current-trick {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .player-info {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            min-width: 150px;
+        }
+    </style>
+</head>
+<body>
+    <h1>升级游戏测试</h1>
+    
+    <div class="error" id="errorMessage"></div>
+    <div class="success" id="successMessage"></div>
+    
+    <div class="actions">
+        <button onclick="createGame()">创建游戏</button>
+        <button onclick="joinGame()">加入游戏</button>
+        <button onclick="spectateGame()">观战</button>
+    </div>
+
+    <div class="game-info">
+        <p>游戏ID: <span id="gameId">未创建</span></p>
+        <p>玩家ID: <span id="playerId">未连接</span></p>
+        <p>状态: <span id="status">未开始</span></p>
+        <p>当前级别: <span id="currentLevel">-</span></p>
+        <p>主牌: <span id="trumpSuit">-</span></p>
+        <p>分数: <span id="scores">-</span></p>
+    </div>
+
+    <div class="hand" id="playerHand">
+        <h3>你的手牌:</h3>
+        <div id="handCards"></div>
+    </div>
+
+    <div class="actions">
+        <button onclick="bid()" id="bidButton" disabled>叫主</button>
+        <button onclick="playSelectedCards()" id="playButton" disabled>出牌</button>
+    </div>
+
+    <h2>游戏状态:</h2>
+    <pre id="gameState">等待游戏开始...</pre>
+
+    <div class="bid-options" id="bidOptions">
+        <h3>选择叫主花色：</h3>
+        <button class="suit-button" onclick="selectBidSuit('♠')">♠</button>
+        <button class="suit-button" onclick="selectBidSuit('♥')">♥</button>
+        <button class="suit-button" onclick="selectBidSuit('♣')">♣</button>
+        <button class="suit-button" onclick="selectBidSuit('♦')">♦</button>
+    </div>
+
+    <div class="current-trick" id="currentTrick">
+        <h3>当前出牌：</h3>
+        <div id="trickCards"></div>
+    </div>
+
+    <div class="players-info" id="playersInfo">
+        <h3>玩家信息：</h3>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentGameId = null;
+        let currentPlayerId = null;
+        let selectedCards = new Set();
+        let currentGameState = null;
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function updateGameInfo(gameState) {
+            if (!gameState) return;
+            
+            document.getElementById('currentLevel').textContent = gameState.currentLevel || '-';
+            document.getElementById('trumpSuit').textContent = gameState.trumpSuit || '-';
+            document.getElementById('scores').textContent = gameState.scores ? gameState.scores.join(' : ') : '-';
+            
+            // 更新按钮状态
+            const bidButton = document.getElementById('bidButton');
+            const playButton = document.getElementById('playButton');
+            
+            bidButton.disabled = gameState.gamePhase !== 'BIDDING' || 
+                               gameState.currentPlayer !== currentPlayerId;
+            playButton.disabled = gameState.gamePhase !== 'PLAYING' || 
+                                gameState.currentPlayer !== currentPlayerId;
+
+            // 更新手牌显示
+            updateHandDisplay(gameState);
+            // 更新当前出牌信息
+            updateCurrentTrick(gameState);
+            // 更新玩家信息
+            updatePlayersInfo(gameState);
+
+            // 如果不是叫主阶段，隐藏叫主选项
+            if (gameState.gamePhase !== 'BIDDING') {
+                document.getElementById('bidOptions').style.display = 'none';
+            }
+        }
+
+        function updateHandDisplay(gameState) {
+            const handDiv = document.getElementById('handCards');
+            handDiv.innerHTML = '';
+            
+            const player = gameState.players.find(p => p.id === currentPlayerId);
+            if (!player || !player.hand) return;
+
+            player.hand.forEach(card => {
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'card' + (selectedCards.has(JSON.stringify(card)) ? ' selected' : '');
+                cardDiv.textContent = `${card.suit}${card.rank}`;
+                cardDiv.onclick = () => toggleCardSelection(card);
+                handDiv.appendChild(cardDiv);
+            });
+        }
+
+        function toggleCardSelection(card) {
+            const cardStr = JSON.stringify(card);
+            if (selectedCards.has(cardStr)) {
+                selectedCards.delete(cardStr);
+            } else {
+                selectedCards.add(cardStr);
+            }
+            updateHandDisplay(currentGameState);
+        }
+
+        function playSelectedCards() {
+            if (selectedCards.size === 0) {
+                showError('请选择要出的牌');
+                return;
+            }
+            const cards = Array.from(selectedCards).map(cardStr => JSON.parse(cardStr));
+            socket.emit('playCards', {
+                gameId: currentGameId,
+                cards: cards
+            });
+            selectedCards.clear();
+        }
+
+        socket.on('connect', () => {
+            document.getElementById('playerId').textContent = socket.id;
+            document.getElementById('status').textContent = '已连接';
+            showSuccess('连接成功');
+        });
+
+        socket.on('gameCreated', (data) => {
+            currentGameId = data.gameId;
+            document.getElementById('gameId').textContent = data.gameId;
+            document.getElementById('status').textContent = '等待其他玩家加入';
+            showSuccess('游戏创建成功，ID: ' + data.gameId);
+        });
+
+        socket.on('gameJoined', (data) => {
+            currentGameId = data.gameId;
+            document.getElementById('gameId').textContent = data.gameId;
+            document.getElementById('status').textContent = '已加入游戏';
+            showSuccess('成功加入游戏');
+        });
+
+        socket.on('waitingForPlayers', (data) => {
+            document.getElementById('status').textContent = `等待玩家加入 (${data.currentPlayers}/4)`;
+        });
+
+        socket.on('gameStarted', (gameState) => {
+            document.getElementById('status').textContent = '游戏开始';
+            currentGameState = gameState;
+            updateGameState(gameState);
+            updateGameInfo(gameState);
+            showSuccess('游戏开始！');
+        });
+
+        socket.on('bidUpdate', (data) => {
+            currentGameState = data.gameState;
+            updateGameState(data.gameState);
+            updateGameInfo(data.gameState);
+        });
+
+        socket.on('playUpdate', (data) => {
+            currentGameState = data.gameState;
+            updateGameState(data.gameState);
+            updateGameInfo(data.gameState);
+        });
+
+        socket.on('error', (error) => {
+            showError(error.message);
+        });
+
+        function updateGameState(gameState) {
+            document.getElementById('gameState').textContent = 
+                JSON.stringify(gameState, null, 2);
+        }
+
+        function createGame() {
+            socket.emit('createGame', {
+                options: {
+                    startLevel: 2,
+                    timeLimit: 0
+                }
+            });
+        }
+
+        function joinGame() {
+            const gameId = prompt('请输入游戏ID:');
+            if (gameId) {
+                socket.emit('joinGame', { gameId });
+                currentGameId = gameId;
+            }
+        }
+
+        function spectateGame() {
+            const gameId = prompt('请输入要观战的游戏ID:');
+            if (gameId) {
+                socket.emit('spectateGame', { gameId });
+            }
+        }
+
+        function bid() {
+            if (!currentGameId) {
+                showError('请先加入游戏');
+                return;
+            }
+            document.getElementById('bidOptions').style.display = 'block';
+        }
+
+        function selectBidSuit(suit) {
+            const selectedCards = Array.from(document.querySelectorAll('.card.selected')).map(cardDiv => {
+                const [suit, rank] = cardDiv.textContent.split('');
+                return { suit, rank };
+            });
+
+            if (selectedCards.length === 0) {
+                showError('请先选择要用来叫主的牌');
+                return;
+            }
+
+            socket.emit('bid', {
+                gameId: currentGameId,
+                bid: {
+                    suit,
+                    cards: selectedCards
+                }
+            });
+
+            document.getElementById('bidOptions').style.display = 'none';
+            selectedCards.clear();
+            updateHandDisplay(currentGameState);
+        }
+
+        function updateCurrentTrick(gameState) {
+            const trickDiv = document.getElementById('trickCards');
+            trickDiv.innerHTML = '';
+            
+            if (!gameState.currentTrick) return;
+
+            gameState.currentTrick.forEach(play => {
+                const playDiv = document.createElement('div');
+                playDiv.className = 'player-info';
+                playDiv.innerHTML = `
+                    <div>玩家: ${play.playerId}</div>
+                    <div>出牌: ${play.cards.map(card => `${card.suit}${card.rank}`).join(', ')}</div>
+                `;
+                trickDiv.appendChild(playDiv);
+            });
+        }
+
+        function updatePlayersInfo(gameState) {
+            const playersDiv = document.getElementById('playersInfo');
+            playersDiv.innerHTML = '<h3>玩家信息：</h3>';
+            
+            if (!gameState.players) return;
+
+            gameState.players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'player-info';
+                playerDiv.innerHTML = `
+                    <div>ID: ${player.id}</div>
+                    <div>队伍: ${player.team === 0 ? '南北' : '东西'}</div>
+                    <div>手牌数: ${player.handSize}</div>
+                    <div>${player.isDealer ? '庄家' : '闲家'}</div>
+                    ${player.id === currentPlayerId ? '<div>（你）</div>' : ''}
+                `;
+                playersDiv.appendChild(playerDiv);
+            });
+        }
+
+        function playCard() {
+            if (!currentGameId) {
+                alert('请先加入游戏');
+                return;
+            }
+            socket.emit('playCards', {
+                gameId: currentGameId,
+                cards: [
+                    { suit: '♠', rank: '2' }
+                ]
+            });
+        }
+    </script>
+</body>
+</html> 
