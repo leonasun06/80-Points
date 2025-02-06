@@ -115,11 +115,26 @@
         </div>
       </div>
     </div>
+
+    <!-- 埋牌界面移到底部 -->
+    <div v-if="showBuryingUI" class="burying-ui-bottom">
+      <h3>请选择8张牌埋底</h3>
+      <div class="countdown">
+        剩余时间: {{ formatCountdown }}秒
+      </div>
+      <button 
+        class="bury-button"
+        @click="buryCards"
+        :disabled="selectedCards.size !== 8"
+      >
+        埋牌
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 const props = defineProps({
   gameState: Object,
@@ -128,7 +143,7 @@ const props = defineProps({
   canPlay: Boolean
 });
 
-const emit = defineEmits(['select-card', 'play']);
+const emit = defineEmits(['select-card', 'play', 'bury-cards']);
 
 const sortedPlayerHand = computed(() => {
   if (!props.gameState?.players) return [];
@@ -235,6 +250,112 @@ function isSelected(card, index) {
 function toggleCard(card) {
   emit('select-card', card);
 }
+
+// 是否显示埋牌界面
+const showBuryingUI = computed(() => {
+  console.log('检查是否显示埋牌界面:', {
+    gamePhase: props.gameState?.gamePhase,
+    dealer: props.gameState?.dealer,
+    playerId: props.playerId,
+    isDealer: props.gameState?.dealer === props.playerId
+  });
+  return props.gameState?.gamePhase === 'BURYING' && 
+         props.gameState?.dealer === props.playerId;
+});
+
+// 添加倒计时相关的状态
+const remainingTime = ref(0);
+let countdownTimer = null;
+
+// 倒计时格式化
+const formatCountdown = computed(() => {
+  // 直接返回剩余秒数
+  return remainingTime.value.toString();
+});
+
+// 更新倒计时
+const updateCountdown = () => {
+  if (!props.gameState?.buryingDeadline) {
+    console.log('没有找到埋牌截止时间');
+    return;
+  }
+  const now = Date.now();
+  const deadline = props.gameState.buryingDeadline;
+  remainingTime.value = Math.max(0, Math.floor((deadline - now) / 1000));
+  
+  if (remainingTime.value <= 0) {
+    if (countdownTimer) {
+      console.log('倒计时结束，清除定时器');
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    // 添加倒计时结束的提示
+    if (props.gameState?.dealer === props.playerId) {
+      console.log('时间到，系统将自动选择最小的8张牌埋底');
+    }
+  }
+};
+
+// 监听游戏状态变化
+watch(
+  () => props.gameState?.buryingDeadline,
+  (newDeadline, oldDeadline) => {
+    console.log('截止时间变化:', {
+      newDeadline,
+      oldDeadline,
+      currentTime: Date.now()
+    });
+  }
+);
+
+// 修改 onMounted
+onMounted(() => {
+  console.log('组件挂载，检查游戏状态:', {
+    gamePhase: props.gameState?.gamePhase,
+    buryingDeadline: props.gameState?.buryingDeadline
+  });
+  
+  // 如果组件挂载时已经是埋牌阶段，启动倒计时
+  if (props.gameState?.gamePhase === 'BURYING' && props.gameState?.buryingDeadline) {
+    console.log('组件挂载时启动埋牌倒计时');
+    updateCountdown();
+    countdownTimer = setInterval(updateCountdown, 1000);
+  }
+});
+
+// 清理定时器
+onUnmounted(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+});
+
+// 修改埋牌方法，添加错误处理
+const buryCards = () => {
+  console.log('尝试埋牌:', {
+    selectedCardsSize: props.selectedCards.size,
+    selectedCards: Array.from(props.selectedCards)
+  });
+
+  if (props.selectedCards.size !== 8) {
+    alert('请选择8张牌');
+    return;
+  }
+  
+  const cards = Array.from(props.selectedCards).map(key => {
+    const [suitRank] = key.split('-');
+    if (suitRank === 'JOKER' || suitRank === 'joker') {
+      return { suit: '🃏', rank: suitRank };
+    }
+    const suit = suitRank[0];
+    const rank = suitRank.slice(1);
+    return { suit, rank };
+  });
+
+  console.log('准备发送埋牌数据:', cards);
+  emit('bury-cards', cards);
+};
 </script>
 
 <style scoped>
@@ -444,5 +565,48 @@ function toggleCard(card) {
 .played-cards .card {
   margin-right: -20px;
   transform: scale(0.8);
+}
+
+.burying-ui-bottom {
+  position: absolute;
+  bottom: 220px;  /* 增加与底部的距离，避免遮挡手牌 */
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 15px 30px;
+  border-radius: 10px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 100;
+}
+
+.burying-ui-bottom h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.burying-ui-bottom .countdown {
+  margin: 0;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.bury-button {
+  padding: 10px 20px;
+  font-size: 18px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.bury-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 </style> 

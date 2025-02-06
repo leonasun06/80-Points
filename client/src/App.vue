@@ -51,6 +51,7 @@
      :canPlay="canPlay"
      @select-card="toggleCard"
      @play="playCards"
+     @bury-cards="buryCards"
    />
 
    <div class="actions" v-if="gameState">
@@ -432,8 +433,67 @@ function playCards() {
   selectedCards.value.clear();
 }
 
+// 修改 buryCards 方法
+const buryCards = (cards) => {
+  console.log('App.vue 收到埋牌请求:', {
+    gameId: gameId.value,
+    playerId: playerId.value,
+    cards
+  });
+  
+  if (!gameId.value || !playerId.value) {
+    showError('游戏状态异常');
+    return;
+  }
+
+  if (gameState.value?.gamePhase !== 'BURYING') {
+    showError('现在不是埋牌阶段');
+    return;
+  }
+
+  if (playerId.value !== gameState.value?.dealer) {
+    showError('只有庄家可以埋牌');
+    return;
+  }
+
+  socket.emit('bury-cards', {
+    gameId: gameId.value,
+    playerId: playerId.value,
+    cards
+  });
+};
+
 onMounted(() => {
- // Socket event handlers remain the same
+  // ... 其他事件监听 ...
+
+  // 修改埋牌结果的监听
+  socket.on('buryCardsResult', ({ result }) => {
+    console.log('收到埋牌结果:', result);
+    if (result.success) {
+      selectedCards.value.clear();
+      showSuccess('埋牌成功');
+    } else {
+      showError(result.error || '埋牌失败');
+    }
+  });
+
+  // 修改游戏状态更新的监听
+  socket.on('gameState', (state) => {
+    console.log('收到游戏状态更新:', {
+      phase: state.gamePhase,
+      dealer: state.dealer,
+      buryingDeadline: state.buryingDeadline,
+      currentTime: Date.now(),
+      remaining: state.buryingDeadline ? Math.floor((state.buryingDeadline - Date.now()) / 1000) : null
+    });
+    
+    // 如果进入埋牌阶段，清空已选择的牌
+    if (state.gamePhase === 'BURYING' && gameState.value?.gamePhase !== 'BURYING') {
+      selectedCards.value.clear();
+    }
+    
+    gameState.value = state;
+  });
 });
 
 onUnmounted(() => {

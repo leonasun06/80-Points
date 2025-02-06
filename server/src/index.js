@@ -164,6 +164,30 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 处理埋牌
+  socket.on('bury-cards', ({ gameId, playerId, cards }) => {
+    try {
+      const game = games.get(gameId);
+      if (!game) {
+        throw new Error('游戏不存在');
+      }
+
+      const result = game.buryCards(playerId, cards);
+      
+      // 广播游戏状态更新
+      io.to(gameId).emit('gameState', game.getGameState());
+      
+      // 向发送者返回结果
+      socket.emit('buryCardsResult', {
+        gameId,
+        playerId,
+        result
+      });
+    } catch (error) {
+      socket.emit('error', error.message);
+    }
+  });
+
   // 断开连接
   socket.on('disconnect', () => {
     console.log('用户断开连接:', socket.id);

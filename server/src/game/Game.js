@@ -11,7 +11,7 @@ class Game {
     this.lastValidPlay = null;       // 上一个有效的出牌
     this.bottomCards = [];           // 底牌
     this.dealer = null;              // 庄家
-    this.gamePhase = 'BIDDING';      // 游戏阶段：叫主阶段(BIDDING)、出牌阶段(PLAYING)
+    this.gamePhase = 'BIDDING';      // 游戏阶段：叫主阶段(BIDDING)、埋牌阶段(BURYING)、出牌阶段(PLAYING)
     this.bids = [];                  // 记录叫主情况
     this.gameStartTime = Date.now();
     this.roundNumber = 1;
@@ -27,6 +27,9 @@ class Game {
       timeLimit: options.timeLimit ?? 0,       // 每局时间限制（秒），0表示无限制
       ...options
     };
+    this.buriedCards = [];           // 埋的牌
+    this.buryingTimeout = null;      // 埋牌倒计时
+    this.buryingDeadline = null;     // 埋牌截止时间
     this.initializeGame();
   }
 
@@ -238,8 +241,43 @@ class Game {
 
     this.trumpSuit = highestBid.suit;
     this.dealer = highestBid.playerId;
-    this.gamePhase = 'PLAYING';
+    this.gamePhase = 'BURYING';
     this.currentPlayer = this.dealer;
+
+    // 把底牌给庄家
+    const dealer = this.players.get(this.dealer);
+    if (dealer) {
+      // 把底牌加入庄家手牌
+      dealer.hand = [...dealer.hand, ...this.bottomCards];
+      
+      // 重新排序庄家的手牌
+      dealer.hand.sort((a, b) => compareCards(a, b, this.currentLevel, this.trumpSuit));
+      
+      // 清空底牌
+      this.bottomCards = [];
+      
+      console.log('底牌分配给庄家:', {
+        dealerId: this.dealer,
+        bottomCards: this.bottomCards,
+        newHandSize: dealer.hand.length
+      });
+
+      // 设置60秒倒计时
+      const BURY_TIME_LIMIT = 60; // 60秒
+      this.buryingDeadline = Date.now() + BURY_TIME_LIMIT * 1000;
+      console.log('设置埋牌截止时间:', {
+        now: Date.now(),
+        deadline: this.buryingDeadline,
+        remaining: BURY_TIME_LIMIT
+      });
+      
+      this.buryingTimeout = setTimeout(() => {
+        console.log('埋牌时间到，自动选择最小的8张牌');
+        this.autoSelectBuryCards();
+      }, BURY_TIME_LIMIT * 1000);
+    } else {
+      console.error('找不到庄家:', this.dealer);
+    }
 
     console.log('叫主结束:', {
       trumpSuit: this.trumpSuit,
@@ -250,6 +288,72 @@ class Game {
     return {
       trumpSuit: this.trumpSuit,
       dealer: this.dealer,
+      gamePhase: this.gamePhase,
+      buryingDeadline: this.buryingDeadline
+    };
+  }
+
+  // 自动选择最小的8张牌埋掉
+  autoSelectBuryCards() {
+    const dealer = this.players.get(this.dealer);
+    if (!dealer) return;
+
+    // 按照从小到大排序
+    const sortedHand = [...dealer.hand].sort((a, b) => 
+      compareCards(b, a, this.currentLevel, this.trumpSuit)
+    );
+
+    // 选择最小的8张牌
+    const cardsToBury = sortedHand.slice(0, 8);
+    this.buryCards(this.dealer, cardsToBury);
+  }
+
+  // 埋牌方法
+  buryCards(playerId, cards) {
+    if (this.gamePhase !== 'BURYING') {
+      throw new Error('不在埋牌阶段');
+    }
+
+    if (playerId !== this.dealer) {
+      throw new Error('只有庄家可以埋牌');
+    }
+
+    if (cards.length !== 8) {
+      throw new Error('必须埋8张牌');
+    }
+
+    const dealer = this.players.get(playerId);
+    if (!dealer) {
+      throw new Error('找不到庄家');
+    }
+
+    // 验证这些牌是否在庄家手中
+    if (!this.playerHasCards(dealer, cards)) {
+      throw new Error('选择的牌不在手牌中');
+    }
+
+    // 保存埋的牌
+    this.buriedCards = cards;
+
+    // 从庄家手中移除这些牌
+    dealer.hand = dealer.hand.filter(card => 
+      !cards.some(buriedCard => 
+        buriedCard.suit === card.suit && buriedCard.rank === card.rank
+      )
+    );
+
+    // 清除倒计时
+    if (this.buryingTimeout) {
+      clearTimeout(this.buryingTimeout);
+      this.buryingTimeout = null;
+    }
+
+    // 进入出牌阶段
+    this.gamePhase = 'PLAYING';
+    this.currentPlayer = this.dealer;
+
+    return {
+      success: true,
       gamePhase: this.gamePhase,
       currentPlayer: this.currentPlayer
     };
