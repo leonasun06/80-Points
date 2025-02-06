@@ -49,6 +49,7 @@
      :playerId="playerId"
      :selectedCards="selectedCards"
      :canPlay="canPlay"
+     :countdown="buryingCountdown"
      @select-card="toggleCard"
      @play="playCards"
      @bury-cards="buryCards"
@@ -98,7 +99,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { io } from 'socket.io-client';
 import GameTable from './components/GameTable.vue';
 
@@ -123,6 +124,10 @@ const timer = ref(null);
 
 // 添加一个状态记录是否已叫主
 const hasBid = ref(false);
+
+// 添加埋牌倒计时
+const buryingCountdown = ref(60);
+const buryingTimer = ref(null);
 
 // 添加排序函数
 const sortCards = (cards, trumpSuit) => {
@@ -463,6 +468,33 @@ const buryCards = (cards) => {
   });
 };
 
+// 监听游戏状态变化
+watch(
+  () => gameState.value?.gamePhase,
+  (newPhase, oldPhase) => {
+    console.log('游戏阶段变化:', { newPhase, oldPhase });
+    
+    // 清理旧的定时器
+    if (buryingTimer.value) {
+      clearInterval(buryingTimer.value);
+      buryingTimer.value = null;
+    }
+
+    // 当进入埋牌阶段时启动倒计时
+    if (newPhase === 'BURYING') {
+      buryingCountdown.value = 60;
+      buryingTimer.value = setInterval(() => {
+        if (buryingCountdown.value > 0) {
+          buryingCountdown.value--;
+        } else {
+          clearInterval(buryingTimer.value);
+          buryingTimer.value = null;
+        }
+      }, 1000);
+    }
+  }
+);
+
 onMounted(() => {
   // ... 其他事件监听 ...
 
@@ -500,6 +532,10 @@ onUnmounted(() => {
  if (timer.value) {
    clearInterval(timer.value);
    timer.value = null;
+ }
+ if (buryingTimer.value) {
+   clearInterval(buryingTimer.value);
+   buryingTimer.value = null;
  }
 });
 

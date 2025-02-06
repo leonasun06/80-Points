@@ -140,7 +140,8 @@ const props = defineProps({
   gameState: Object,
   playerId: String,
   selectedCards: Set,
-  canPlay: Boolean
+  canPlay: Boolean,
+  countdown: Number
 });
 
 const emit = defineEmits(['select-card', 'play', 'bury-cards']);
@@ -263,72 +264,9 @@ const showBuryingUI = computed(() => {
          props.gameState?.dealer === props.playerId;
 });
 
-// 添加倒计时相关的状态
-const remainingTime = ref(0);
-let countdownTimer = null;
-
-// 倒计时格式化
+// 修改倒计时显示
 const formatCountdown = computed(() => {
-  // 直接返回剩余秒数
-  return remainingTime.value.toString();
-});
-
-// 更新倒计时
-const updateCountdown = () => {
-  if (!props.gameState?.buryingDeadline) {
-    console.log('没有找到埋牌截止时间');
-    return;
-  }
-  const now = Date.now();
-  const deadline = props.gameState.buryingDeadline;
-  remainingTime.value = Math.max(0, Math.floor((deadline - now) / 1000));
-  
-  if (remainingTime.value <= 0) {
-    if (countdownTimer) {
-      console.log('倒计时结束，清除定时器');
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-    }
-    // 添加倒计时结束的提示
-    if (props.gameState?.dealer === props.playerId) {
-      console.log('时间到，系统将自动选择最小的8张牌埋底');
-    }
-  }
-};
-
-// 监听游戏状态变化
-watch(
-  () => props.gameState?.buryingDeadline,
-  (newDeadline, oldDeadline) => {
-    console.log('截止时间变化:', {
-      newDeadline,
-      oldDeadline,
-      currentTime: Date.now()
-    });
-  }
-);
-
-// 修改 onMounted
-onMounted(() => {
-  console.log('组件挂载，检查游戏状态:', {
-    gamePhase: props.gameState?.gamePhase,
-    buryingDeadline: props.gameState?.buryingDeadline
-  });
-  
-  // 如果组件挂载时已经是埋牌阶段，启动倒计时
-  if (props.gameState?.gamePhase === 'BURYING' && props.gameState?.buryingDeadline) {
-    console.log('组件挂载时启动埋牌倒计时');
-    updateCountdown();
-    countdownTimer = setInterval(updateCountdown, 1000);
-  }
-});
-
-// 清理定时器
-onUnmounted(() => {
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
+  return props.countdown?.toString() || '0';
 });
 
 // 修改埋牌方法，添加错误处理
